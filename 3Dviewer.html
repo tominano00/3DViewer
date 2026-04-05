@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FBX Viewer with Memo</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #222;
+            touch-action: none; 
+            user-select: none;
+            -webkit-user-select: none;
+            font-family: sans-serif;
+        }
+        
+        /* 基本UI */
+        #ui-layer {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #fff;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px #000;
+            z-index: 10;
+        }
+
+        /* ハンバーガーボタン */
+        #hamburger-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 40px;
+            height: 40px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid #fff;
+            border-radius: 5px;
+            color: white;
+            font-size: 24px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            z-index: 40;
+            pointer-events: auto;
+        }
+
+        /* メモ追加ボタン */
+        #memo-add-btn {
+            position: absolute;
+            top: 60px;
+            right: 10px;
+            width: 40px;
+            height: 40px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid #fff;
+            border-radius: 5px;
+            color: white;
+            font-size: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            z-index: 40;
+            pointer-events: auto;
+            transition: background 0.2s;
+        }
+        #memo-add-btn.active {
+            background: rgba(255, 165, 0, 0.8); /* ONの時はオレンジ */
+        }
+
+        /* メニューパネル */
+        #menu-panel {
+            position: absolute;
+            top: 10px;
+            right: 60px;
+            width: 250px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #555;
+            border-radius: 5px;
+            padding: 15px;
+            color: white;
+            display: none; /* 初期非表示 */
+            z-index: 40;
+            pointer-events: auto;
+        }
+        .menu-item { margin-bottom: 15px; }
+        .menu-item label { display: block; margin-bottom: 5px; font-size: 14px; }
+        .menu-item input[type="range"] { width: 100%; }
+        .menu-item select, .menu-item button {
+            width: 100%;
+            padding: 5px;
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 3px;
+        }
+
+        /* メモ編集ウィンドウ */
+        #memo-dialog {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 300px;
+            background: rgba(20, 20, 20, 0.95);
+            border: 2px solid orange;
+            border-radius: 8px;
+            padding: 15px;
+            display: none; /* 初期非表示 */
+            z-index: 50;
+            pointer-events: auto;
+        }
+        #memo-dialog textarea {
+            width: 100%;
+            height: 100px;
+            background: #111;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 5px;
+            box-sizing: border-box;
+            resize: none;
+            margin-bottom: 10px;
+        }
+        .dialog-btns { display: flex; justify-content: space-between; }
+        .dialog-btns button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        #btn-save-memo { background: orange; color: black; }
+        #btn-delete-memo { background: #d32f2f; color: white; }
+        #btn-close-memo { background: #555; color: white; }
+
+        /* ジョイスティックと上下ボタン */
+        #joystick-base {
+            position: absolute; width: 100px; height: 100px; border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1); border: 2px solid rgba(255, 255, 255, 0.3);
+            display: none; transform: translate(-50%, -50%); pointer-events: none; z-index: 20;
+        }
+        #joystick-stick {
+            position: absolute; width: 40px; height: 40px; border-radius: 50%;
+            background: rgba(255, 255, 255, 0.5); display: none; transform: translate(-50%, -50%);
+            pointer-events: none; z-index: 20;
+        }
+        .v-btn {
+            position: absolute; right: 10px; width: 50px; height: 50px;
+            background: rgba(255, 255, 255, 0.2); border: 2px solid rgba(255, 255, 255, 0.5);
+            border-radius: 50%; color: white; display: flex; justify-content: center;
+            align-items: center; font-weight: bold; z-index: 30; pointer-events: auto; cursor: pointer;
+        }
+        #btn-up { bottom: 80px; }
+        #btn-down { bottom: 15px; }
+    </style>
+</head>
+<body>
+    <div id="ui-layer">
+        <p>左：移動 | 右：視点 | メモ：点追加</p>
+    </div>
+
+    <div id="hamburger-btn">≡</div>
+    <div id="memo-add-btn" title="メモ追加モード">📝</div>
+
+    <div id="menu-panel">
+        <div class="menu-item">
+            <label>移動速度: <span id="speed-val">1.0</span>x</label>
+            <input type="range" id="slider-move" min="0.1" max="3.0" step="0.1" value="1.0">
+        </div>
+        <div class="menu-item">
+            <label>視点感度: <span id="look-val">1.0</span>x</label>
+            <input type="range" id="slider-look" min="0.1" max="3.0" step="0.1" value="1.0">
+        </div>
+        <div class="menu-item">
+            <label>モデル切り替え</label>
+            <select id="model-select">
+                <option value="model/room01.fbx">Model 1 (room01.fbx)</option>
+                <option value="model/handMesh.fbx">Model 2 (null)</option>
+            </select>
+        </div>
+        <div class="menu-item">
+            <button id="btn-reset-view">視点・位置リセット</button>
+        </div>
+    </div>
+
+    <div id="memo-dialog">
+        <h3 style="margin-top:0; color:orange;">メモ</h3>
+        <textarea id="memo-text" placeholder="ここにメモを入力..."></textarea>
+        <div class="dialog-btns">
+            <button id="btn-delete-memo">削除</button>
+            <button id="btn-close-memo">閉じる</button>
+            <button id="btn-save-memo">保存</button>
+        </div>
+    </div>
+
+    <div id="joystick-base"></div>
+    <div id="joystick-stick"></div>
+    <div id="btn-up" class="v-btn">UP</div>
+    <div id="btn-down" class="v-btn">DWN</div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+
+        // --- 1. 基本セットアップ ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x333344);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 5, 10);
+        camera.rotation.order = 'YXZ'; // FPS視点用
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+        hemiLight.position.set(0, 200, 0);
+        scene.add(hemiLight);
+
+        const gridHelper = new THREE.GridHelper(100, 100);
+        scene.add(gridHelper);
+
+        // --- 2. モデル管理と読み込み ---
+        const loader = new FBXLoader();
+        let currentModel = null;
+        
+        function loadFBX(url) {
+            if (currentModel) {
+                scene.remove(currentModel);
+                clearAllMemos(); // モデル変更時にメモも消去
+            }
+            loader.load(url, function (object) {
+                object.scale.set(0.01, 0.01, 0.01);
+                currentModel = object;
+                scene.add(object);
+            }, undefined, function(e) {
+                console.error("モデル読み込みエラー:", e);
+                alert("モデルの読み込みに失敗しました。ファイル名を確認してください。");
+            });
+        }
+        
+        // 初期モデル読み込み
+        loadFBX('model/room01.fbx');
+
+        // --- 3. メモ機能（Raycaster） ---
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let memoMarkers = []; // 配置したオレンジの点を格納する配列
+        let isMemoMode = false;
+        let activeMarker = null; // 現在編集中のマーカー
+
+        // マーカーの形状（オレンジ色の球体）
+        const markerGeo = new THREE.SphereGeometry(0.3, 16, 16);
+        const markerMat = new THREE.MeshBasicMaterial({ color: 0xffa500 });
+
+        function createMemoMarker(position) {
+            const marker = new THREE.Mesh(markerGeo, markerMat);
+            marker.position.copy(position);
+            marker.userData = { text: "" }; // メモ内容を保持
+            scene.add(marker);
+            memoMarkers.push(marker);
+            return marker;
+        }
+
+        function clearAllMemos() {
+            memoMarkers.forEach(m => scene.remove(m));
+            memoMarkers = [];
+        }
+
+        // タップ/クリック判定処理
+        function handleTap(clientX, clientY) {
+            // UIクリック時は反応させない
+            if (document.getElementById('menu-panel').style.display === 'block' && clientX > window.innerWidth - 260 && clientY < 300) return;
+            if (document.getElementById('memo-dialog').style.display === 'block') return;
+
+            // 正規化デバイス座標 (-1 〜 +1)
+            mouse.x = (clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+
+            // 1. まず既存のメモマーカーと交差判定（モード問わず開ける）
+            const memoIntersects = raycaster.intersectObjects(memoMarkers);
+            if (memoIntersects.length > 0) {
+                openMemoDialog(memoIntersects[0].object);
+                return; // マーカーを開いたら終了
+            }
+
+            // 2. メモ追加モードONの場合のみ、モデルに対してレイキャストして新規作成
+            if (isMemoMode && currentModel) {
+                // true を指定して子要素（メッシュ）まで再帰的に判定
+                const modelIntersects = raycaster.intersectObject(currentModel, true);
+                if (modelIntersects.length > 0) {
+                    const hitPoint = modelIntersects[0].point;
+                    const newMarker = createMemoMarker(hitPoint);
+                    openMemoDialog(newMarker);
+                }
+            }
+        }
+
+        // --- 4. UIイベントの紐付け ---
+
+        // ハンバーガーメニュー
+        const menuPanel = document.getElementById('menu-panel');
+        document.getElementById('hamburger-btn').addEventListener('click', () => {
+            menuPanel.style.display = menuPanel.style.display === 'block' ? 'none' : 'block';
+        });
+
+        // 感度スライダー
+        let baseMoveSpeed = 15.0;
+        let baseLookSpeed = 0.005;
+        let moveMultiplier = 1.0;
+        let lookMultiplier = 1.0;
+
+        document.getElementById('slider-move').addEventListener('input', (e) => {
+            moveMultiplier = parseFloat(e.target.value);
+            document.getElementById('speed-val').innerText = moveMultiplier.toFixed(1);
+        });
+        document.getElementById('slider-look').addEventListener('input', (e) => {
+            lookMultiplier = parseFloat(e.target.value);
+            document.getElementById('look-val').innerText = lookMultiplier.toFixed(1);
+        });
+
+        // モデル切り替え
+        document.getElementById('model-select').addEventListener('change', (e) => {
+            loadFBX(e.target.value);
+            menuPanel.style.display = 'none'; // 切り替え後にメニューを閉じる
+        });
+
+        // 視点リセット
+        document.getElementById('btn-reset-view').addEventListener('click', () => {
+            camera.position.set(0, 5, 10);
+            camera.quaternion.identity();
+            euler.set(0,0,0);
+            menuPanel.style.display = 'none';
+        });
+
+        // メモ追加ボタントグル
+        const memoAddBtn = document.getElementById('memo-add-btn');
+        memoAddBtn.addEventListener('click', () => {
+            isMemoMode = !isMemoMode;
+            if (isMemoMode) {
+                memoAddBtn.classList.add('active');
+            } else {
+                memoAddBtn.classList.remove('active');
+            }
+        });
+
+        // メモダイアログの操作
+        const memoDialog = document.getElementById('memo-dialog');
+        const memoText = document.getElementById('memo-text');
+
+        function openMemoDialog(marker) {
+            activeMarker = marker;
+            memoText.value = marker.userData.text || "";
+            memoDialog.style.display = 'block';
+            isMemoMode = false; // 編集時は追加モードを一旦解除
+            memoAddBtn.classList.remove('active');
+        }
+
+        document.getElementById('btn-close-memo').addEventListener('click', () => {
+            memoDialog.style.display = 'none';
+            activeMarker = null;
+        });
+
+        document.getElementById('btn-save-memo').addEventListener('click', () => {
+            if (activeMarker) {
+                activeMarker.userData.text = memoText.value;
+            }
+            memoDialog.style.display = 'none';
+            activeMarker = null;
+        });
+
+        document.getElementById('btn-delete-memo').addEventListener('click', () => {
+            if (activeMarker) {
+                scene.remove(activeMarker);
+                memoMarkers = memoMarkers.filter(m => m !== activeMarker);
+            }
+            memoDialog.style.display = 'none';
+            activeMarker = null;
+        });
+
+
+        // --- 5. 操作コントロール（ジョイスティックとスワイプ） ---
+        const moveState = { x: 0, y: 0, up: false, down: false };
+        const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+        const PI_2 = Math.PI / 2;
+        
+        let joystickTouchId = null;
+        let lookTouchId = null;
+        let joystickOrigin = { x: 0, y: 0 };
+        let lastLookPos = { x: 0, y: 0 };
+        const maxJoyRadius = 50;
+
+        const jBase = document.getElementById('joystick-base');
+        const jStick = document.getElementById('joystick-stick');
+
+        // タップ（クリック）判定用変数
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let isTap = false;
+
+        document.addEventListener('touchstart', (e) => {
+            // UI上のタッチはカメラ操作に影響させない
+            if (e.target.closest('#menu-panel') || e.target.closest('#memo-dialog') || e.target.classList.contains('v-btn') || e.target.id === 'hamburger-btn' || e.target.id === 'memo-add-btn') {
+                return;
+            }
+
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const t = e.changedTouches[i];
+                
+                // タップ判定の初期化
+                touchStartX = t.clientX;
+                touchStartY = t.clientY;
+                isTap = true;
+
+                if (t.clientX < window.innerWidth / 2 && joystickTouchId === null) {
+                    joystickTouchId = t.identifier;
+                    joystickOrigin = { x: t.clientX, y: t.clientY };
+                    jBase.style.display = 'block'; jStick.style.display = 'block';
+                    jBase.style.left = `${t.clientX}px`; jBase.style.top = `${t.clientY}px`;
+                    jStick.style.left = `${t.clientX}px`; jStick.style.top = `${t.clientY}px`;
+                } else if (t.clientX >= window.innerWidth / 2 && lookTouchId === null) {
+                    lookTouchId = t.identifier;
+                    lastLookPos = { x: t.clientX, y: t.clientY };
+                }
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchmove', (e) => {
+            if (e.target.closest('#memo-dialog textarea')) return; // テキストエリア内のスクロールは許可
+            e.preventDefault(); 
+            
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const t = e.changedTouches[i];
+
+                // 指が動いたらタップ（クリック）ではないと判定
+                if (Math.abs(t.clientX - touchStartX) > 10 || Math.abs(t.clientY - touchStartY) > 10) {
+                    isTap = false;
+                }
+
+                if (t.identifier === joystickTouchId) {
+                    let dx = t.clientX - joystickOrigin.x;
+                    let dy = t.clientY - joystickOrigin.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist > maxJoyRadius) {
+                        dx = (dx / dist) * maxJoyRadius; dy = (dy / dist) * maxJoyRadius;
+                    }
+                    jStick.style.left = `${joystickOrigin.x + dx}px`;
+                    jStick.style.top = `${joystickOrigin.y + dy}px`;
+                    moveState.x = dx / maxJoyRadius; moveState.y = dy / maxJoyRadius;
+                } else if (t.identifier === lookTouchId) {
+                    const deltaX = t.clientX - lastLookPos.x;
+                    const deltaY = t.clientY - lastLookPos.y;
+                    
+                    euler.setFromQuaternion(camera.quaternion);
+                    euler.y -= deltaX * (baseLookSpeed * lookMultiplier);
+                    euler.x -= deltaY * (baseLookSpeed * lookMultiplier);
+                    euler.x = Math.max(-PI_2, Math.min(PI_2, euler.x));
+                    camera.quaternion.setFromEuler(euler);
+
+                    lastLookPos = { x: t.clientX, y: t.clientY };
+                }
+            }
+        }, { passive: false });
+
+        const handleTouchEnd = (e) => {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const t = e.changedTouches[i];
+                
+                // タップ判定が維持されていればRaycast処理へ
+                if (isTap) {
+                    handleTap(t.clientX, t.clientY);
+                }
+
+                if (t.identifier === joystickTouchId) {
+                    joystickTouchId = null; moveState.x = 0; moveState.y = 0;
+                    jBase.style.display = 'none'; jStick.style.display = 'none';
+                } else if (t.identifier === lookTouchId) {
+                    lookTouchId = null;
+                }
+            }
+        };
+        document.addEventListener('touchend', handleTouchEnd);
+        document.addEventListener('touchcancel', handleTouchEnd);
+
+        // PCマウス用のタップ（クリック）判定
+        let isMouseDown = false;
+        let mouseStartX = 0, mouseStartY = 0;
+        let isMouseTap = false;
+
+        document.addEventListener('mousedown', (e) => {
+            if (e.target.closest('#menu-panel') || e.target.closest('#memo-dialog') || e.target.classList.contains('v-btn') || e.target.id === 'hamburger-btn' || e.target.id === 'memo-add-btn') return;
+            isMouseDown = true;
+            mouseStartX = e.clientX; mouseStartY = e.clientY;
+            isMouseTap = true;
+        });
+        document.addEventListener('mousemove', (e) => {
+            if (!isMouseDown) return;
+            if (Math.abs(e.clientX - mouseStartX) > 5 || Math.abs(e.clientY - mouseStartY) > 5) {
+                isMouseTap = false; // ドラッグされた
+            }
+            if (!isMouseTap) {
+                euler.setFromQuaternion(camera.quaternion);
+                euler.y -= e.movementX * (baseLookSpeed * lookMultiplier);
+                euler.x -= e.movementY * (baseLookSpeed * lookMultiplier);
+                euler.x = Math.max(-PI_2, Math.min(PI_2, euler.x));
+                camera.quaternion.setFromEuler(euler);
+            }
+        });
+        document.addEventListener('mouseup', (e) => {
+            if (isMouseTap && isMouseDown) {
+                handleTap(e.clientX, e.clientY);
+            }
+            isMouseDown = false;
+        });
+
+        // PCキーボード移動
+        document.addEventListener('keydown', (e) => {
+            // テキスト入力中はキー操作を無効化
+            if (document.activeElement.tagName === 'TEXTAREA') return;
+            if (e.code === 'KeyW') moveState.y = -1;
+            if (e.code === 'KeyS') moveState.y = 1;
+            if (e.code === 'KeyA') moveState.x = -1;
+            if (e.code === 'KeyD') moveState.x = 1;
+        });
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'KeyW' || e.code === 'KeyS') moveState.y = 0;
+            if (e.code === 'KeyA' || e.code === 'KeyD') moveState.x = 0;
+        });
+
+        // 上下ボタン
+        const btnUp = document.getElementById('btn-up');
+        const btnDown = document.getElementById('btn-down');
+        btnUp.addEventListener('touchstart', (e) => { e.preventDefault(); moveState.up = true; });
+        btnUp.addEventListener('touchend', (e) => { e.preventDefault(); moveState.up = false; });
+        btnDown.addEventListener('touchstart', (e) => { e.preventDefault(); moveState.down = true; });
+        btnDown.addEventListener('touchend', (e) => { e.preventDefault(); moveState.down = false; });
+        btnUp.addEventListener('mousedown', () => moveState.up = true);
+        btnUp.addEventListener('mouseup', () => moveState.up = false);
+        btnDown.addEventListener('mousedown', () => moveState.down = true);
+        btnDown.addEventListener('mouseup', () => moveState.down = false);
+
+        // --- 6. アニメーションループ ---
+        const clock = new THREE.Clock();
+        const forward = new THREE.Vector3();
+        const right = new THREE.Vector3();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            camera.getWorldDirection(forward);
+            forward.y = 0; forward.normalize();
+            right.copy(forward).cross(camera.up).normalize();
+
+            const currentMoveSpeed = baseMoveSpeed * moveMultiplier;
+            camera.position.addScaledVector(forward, -moveState.y * currentMoveSpeed * delta);
+            camera.position.addScaledVector(right, moveState.x * currentMoveSpeed * delta);
+
+            if (moveState.up) camera.position.y += currentMoveSpeed * delta;
+            if (moveState.down) camera.position.y -= currentMoveSpeed * delta;
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
